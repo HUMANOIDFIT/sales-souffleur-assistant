@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Souffleur Assistant</title>
+  <meta
+    name="description"
+    content="Turn-based суфлер для менеджера: различает менеджера и клиента, реагирует после паузы клиента и пишет короткую подсказку для живого ответа."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-left" aria-hidden="true"></div>
+  <div class="ambient ambient-right" aria-hidden="true"></div>
+
+  <main class="shell">
+    <section class="hero panel">
+      <div class="hero-copy">
+        <p class="eyebrow">Turn-Based Sales Copilot</p>
+        <h1>Клиент закончил говорить. Суфлер за секунды дал менеджеру следующую мысль.</h1>
+        <p class="hero-text">
+          Приложение записывает разговор, режет его на речевые ходы, определяет кто говорил и показывает менеджеру
+          короткую подсказку длиной до 120 символов только после паузы клиента.
+        </p>
+      </div>
+
+      <div class="hero-stats">
+        <article class="stat-card">
+          <span class="stat-label">Режим</span>
+          <strong id="modeBadge">Demo / Live</strong>
+          <span class="stat-note" id="endpointHint">Live-режим идет через serverless и OpenAI API</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Диалог</span>
+          <strong id="sessionBadge">Ожидаем старт</strong>
+          <span class="stat-note" id="durationBadge">00:00</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Последний спикер</span>
+          <strong id="speakerBadge">Не определен</strong>
+          <span class="stat-note" id="turnStateBadge">Turn detector не активирован</span>
+        </article>
+        <article class="stat-card">
+          <span class="stat-label">Подсказка</span>
+          <strong id="hintLengthBadge">0 / 120</strong>
+          <span class="stat-note">Подсказка появляется только после окончания фразы клиента</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="dashboard-grid">
+      <section class="panel setup-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Контекст и голос</p>
+            <h2>Настройка продажи</h2>
+          </div>
+          <span class="chip">v1</span>
+        </div>
+
+        <form id="settingsForm" class="settings-grid">
+          <label class="field">
+            <span>Менеджер</span>
+            <input id="managerName" type="text" placeholder="Например, Анна">
+          </label>
+
+          <label class="field">
+            <span>Клуб / компания</span>
+            <input id="clubName" type="text" placeholder="Например, HUMAN 24/7">
+          </label>
+
+          <label class="field">
+            <span>Что продаем</span>
+            <input id="productName" type="text" placeholder="Клубная карта на 12 месяцев">
+          </label>
+
+          <label class="field">
+            <span>Режим движка</span>
+            <select id="coachMode">
+              <option value="demo">Demo: локальная логика</option>
+              <option value="live">Live: diarization + OpenAI</option>
+            </select>
+          </label>
+
+          <label class="field field-wide">
+            <span>Ключевые опоры для продажи</span>
+            <textarea id="knowledgeNotes" rows="4" placeholder="Сюда можно вставить текущие тезисы продажи. Позже подключим твои файлы базы знаний."></textarea>
+          </label>
+        </form>
+
+        <div class="calibration-card">
+          <div class="mini-head">
+            <div>
+              <p class="eyebrow">Voice Enrollment</p>
+              <h3>Калибровка менеджера</h3>
+            </div>
+            <span class="chip" id="referenceStatus">Голос не записан</span>
+          </div>
+          <p class="card-text">
+            Перед звонком менеджер читает 4-5 секунд эталонной речи. Этот образец помогает отделять менеджера от клиента.
+          </p>
+          <div class="action-cluster">
+            <button id="recordReferenceBtn" class="primary-btn" type="button">Записать голос менеджера</button>
+            <button id="clearReferenceBtn" class="ghost-btn danger" type="button">Сбросить эталон</button>
+          </div>
+        </div>
+
+        <div class="action-strip">
+          <button id="startSessionBtn" class="primary-btn" type="button">Запустить диалог</button>
+          <button id="stopSessionBtn" class="ghost-btn" type="button">Остановить</button>
+          <button id="manualClientTurnBtn" class="ghost-btn" type="button">Тест клиентской реплики</button>
+        </div>
+
+        <label class="field field-wide">
+          <span>Ручной тест реплики клиента</span>
+          <textarea id="manualTurnInput" rows="3" placeholder="Нужно протестировать логику без микрофона? Вставь сюда фразу клиента и отправь на анализ."></textarea>
+        </label>
+
+        <div id="browserNote" class="helper-note">
+          Для live-режима нужен микрофон, serverless-функция и OpenAI API ключ. Demo-режим работает сразу в браузере.
+        </div>
+      </section>
+
+      <section class="panel live-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Живой turn log</p>
+            <h2>Сегменты разговора</h2>
+          </div>
+          <div class="action-cluster">
+            <span class="chip" id="clientTurnsBadge">Клиент: 0</span>
+            <span class="chip" id="managerTurnsBadge">Менеджер: 0</span>
+          </div>
+        </div>
+
+        <div class="turn-monitor">
+          <div class="monitor-card">
+            <span class="mini-label">Turn detector</span>
+            <strong id="vadStatus">Ожидание</strong>
+            <p id="vadDetails">После старта приложение ловит голосовую активность и ждет паузу клиента.</p>
+          </div>
+          <div class="monitor-card">
+            <span class="mini-label">Последняя реплика клиента</span>
+            <strong id="latestClientLabel">Еще нет данных</strong>
+            <p id="latestClientText">После первой клиентской реплики здесь появится распознанный текст.</p>
+          </div>
+        </div>
+
+        <div id="transcriptList" class="transcript-list"></div>
+      </section>
+
+      <section class="panel hint-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Моментальная подсказка</p>
+            <h2>Что менеджеру сказать сейчас</h2>
+          </div>
+          <div class="action-cluster">
+            <span class="chip chip-attention" id="hintBadge">Ждем клиентскую реплику</span>
+            <span class="chip" id="voiceStatus">Озвучка: вкл</span>
+            <button id="toggleVoiceBtn" class="ghost-btn" type="button">Выключить озвучку</button>
+            <button id="replayHintBtn" class="ghost-btn" type="button">Повторить голосом</button>
+          </div>
+        </div>
+
+        <article class="focus-card">
+          <span class="mini-label">Подсказка 100–120 символов</span>
+          <p id="primaryHint" class="primary-hint">После паузы клиента здесь появится короткая фраза для живого ответа менеджера.</p>
+          <p class="hint-subtext" id="hintSubtext">Эта же подсказка остается на мониторе текстом и, если включено, озвучивается голосом.</p>
+        </article>
+
+        <div class="hint-grid">
+          <article class="coach-card">
+            <span class="mini-label">Зачем это сейчас</span>
+            <p id="hintReason">Здесь будет краткий смысл клиентской реплики и логика ответа.</p>
+          </article>
+
+          <article class="coach-card">
+            <span class="mini-label">Следующий шаг к продаже</span>
+            <p id="nextStep">После первых данных суфлер начнет вести менеджера к следующему микро-согласию.</p>
+          </article>
+        </div>
+
+        <article class="coach-card">
+          <span class="mini-label">База знаний в ходу</span>
+          <div id="knowledgeChips" class="keyword-cloud">
+            <span class="keyword">приоритет 12 месяцев</span>
+            <span class="keyword">возражения клиента</span>
+            <span class="keyword">доступ 24/7</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel export-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Разбор и экспорт</p>
+            <h2>Файлы разговора</h2>
+          </div>
+          <div class="action-cluster">
+            <button id="runReviewBtn" class="primary-btn" type="button">Сделать разбор</button>
+            <button id="exportMarkdownBtn" class="ghost-btn" type="button">Скачать .md</button>
+            <button id="exportJsonBtn" class="ghost-btn" type="button">Скачать .json</button>
+            <button id="exportAudioBtn" class="ghost-btn" type="button">Скачать аудио</button>
+          </div>
+        </div>
+
+        <div id="reviewOutput" class="review-output">
+          <p>После разговора здесь появится разбор: где потеряли продажу, где был хороший ход и что улучшить.</p>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    window.SALES_COACH_CONFIG = {
+      assistantEndpoint: '/.netlify/functions/coach',
+      defaultManagerName: 'Менеджер',
+      defaultClubName: 'HUMAN 24/7',
+      defaultProductName: 'клубная карта на 12 месяцев',
+      maxHintLength: 120,
+      minHintLength: 100,
+      silenceDurationMs: 900,
+      referenceDurationMs: 4500
+    };
+  </script>
+  <script src="app.js"></script>
+</body>
+</html>
